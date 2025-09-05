@@ -5,6 +5,7 @@ import ActionFab from './ActionFab'
 import NotificationBanner from './NotificationBanner'
 import { useAuth } from '../contexts/AuthContext'
 import { useSubscription } from '../contexts/SubscriptionContext'
+import { fileService, incidentService } from '../lib/database.js'
 import toast from 'react-hot-toast'
 
 export default function RightsCard({ selectedState, onChangeState, onShowSubscription }) {
@@ -114,9 +115,6 @@ export default function RightsCard({ selectedState, onChangeState, onShowSubscri
     
     try {
       const loadingToast = toast.loading('Saving recording...')
-      
-      // Import services
-      const { fileService, incidentService } = await import('../lib/database.js')
       
       // Create file with timestamp
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
