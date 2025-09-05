@@ -1,22 +1,38 @@
 import React, { useState } from 'react'
-import { X, Crown, Check, CreditCard } from 'lucide-react'
+import { X, Crown, Check, CreditCard, Loader } from 'lucide-react'
 import { useSubscription } from '../contexts/SubscriptionContext'
+import { useAuth } from '../contexts/AuthContext'
+import { createCheckoutSession } from '../lib/stripe.js'
 import toast from 'react-hot-toast'
 
 export default function SubscriptionModal({ onClose }) {
   const [loading, setLoading] = useState(false)
-  const { upgradeToProas } = useSubscription()
+  const { upgradeToPro, PRICING, subscriptionStatus, getUsagePercentage, getRemainingGenerations } = useSubscription()
+  const { user } = useAuth()
 
   const handleUpgrade = async () => {
+    if (!user) {
+      toast.error('Please sign in to upgrade')
+      return
+    }
+
     setLoading(true)
     try {
-      // In real app, this would integrate with Stripe
-      await new Promise(resolve => setTimeout(resolve, 2000)) // Simulate payment
-      await upgradeToProas()
-      toast.success('Upgraded to Pro successfully!')
-      onClose()
+      // Create Stripe checkout session
+      const session = await createCheckoutSession(user.id, PRICING.PRO.priceId)
+      
+      if (session.url === '#mock-checkout') {
+        // Mock upgrade for demo
+        await upgradeToPro()
+        toast.success('Upgraded to Pro successfully!')
+        onClose()
+      } else {
+        // Redirect to Stripe checkout
+        window.location.href = session.url
+      }
     } catch (error) {
       toast.error('Payment failed. Please try again.')
+      console.error('Upgrade error:', error)
     } finally {
       setLoading(false)
     }

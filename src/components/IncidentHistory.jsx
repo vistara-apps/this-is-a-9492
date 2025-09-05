@@ -1,27 +1,73 @@
 import React, { useState, useEffect } from 'react'
-import { FileText, Play, Download, Trash2, Calendar, MapPin } from 'lucide-react'
+import { FileText, Play, Download, Trash2, Calendar, MapPin, Loader } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
+import { incidentService, fileService } from '../lib/database.js'
 import toast from 'react-hot-toast'
 
 export default function IncidentHistory() {
   const [incidents, setIncidents] = useState([])
+  const [loading, setLoading] = useState(true)
   const { user } = useAuth()
 
   useEffect(() => {
     if (user) {
-      // Load incidents from localStorage (in real app, would fetch from Supabase)
-      const savedReports = JSON.parse(localStorage.getItem('incident-reports') || '[]')
-      const userReports = savedReports.filter(report => report.userId === user.id)
-      setIncidents(userReports)
+      loadIncidents()
+    } else {
+      setIncidents([])
+      setLoading(false)
     }
   }, [user])
 
-  const deleteIncident = (incidentId) => {
-    const savedReports = JSON.parse(localStorage.getItem('incident-reports') || '[]')
-    const updatedReports = savedReports.filter(report => report.id !== incidentId)
-    localStorage.setItem('incident-reports', JSON.stringify(updatedReports))
-    setIncidents(updatedReports.filter(report => report.userId === user.id))
-    toast.success('Incident deleted')
+  const loadIncidents = async () => {
+    try {
+      setLoading(true)
+      const userIncidents = await incidentService.getUserIncidents(user.id)
+      setIncidents(userIncidents)
+    } catch (error) {
+      console.error('Error loading incidents:', error)
+      // Fallback to localStorage
+      const savedReports = JSON.parse(localStorage.getItem('incident-reports') || '[]')
+      const userReports = savedReports.filter(report => report.userId === user.id)
+      setIncidents(userReports)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const deleteIncident = async (incident) => {
+    try {
+      const loadingToast = toast.loading('Deleting incident...')
+      
+      // Delete from database
+      await incidentService.deleteIncident(incident.report_id || incident.id, user.id)
+      
+      // Delete associated files if they exist
+      if (incident.audio_url && incident.audio_url.includes('storage')) {
+        try {
+          await fileService.deleteFile(incident.audio_url.split('/').pop())
+        } catch (error) {
+          console.warn('Could not delete audio file:', error)
+        }
+      }
+      
+      if (incident.video_url && incident.video_url.includes('storage')) {
+        try {
+          await fileService.deleteFile(incident.video_url.split('/').pop())
+        } catch (error) {
+          console.warn('Could not delete video file:', error)
+        }
+      }
+      
+      // Reload incidents
+      await loadIncidents()
+      
+      toast.dismiss(loadingToast)
+      toast.success('Incident deleted successfully')
+    } catch (error) {
+      toast.dismiss()
+      toast.error('Failed to delete incident')
+      console.error('Delete incident error:', error)
+    }
   }
 
   const downloadIncident = (incident) => {
