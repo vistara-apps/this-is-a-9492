@@ -38,29 +38,30 @@ export default function RightsCard({ selectedState, onChangeState, onShowSubscri
     }
 
     try {
-      toast.loading('Generating AI scripts...')
+      const loadingToast = toast.loading('Generating AI scripts...')
       
-      // In real app, this would call OpenAI API
-      // Simulating API delay
-      await new Promise(resolve => setTimeout(resolve, 2000))
+      // Import OpenAI service
+      const { generateLegalScripts } = await import('../lib/openai.js')
       
-      const mockScripts = {
-        scriptToSay: `• "I am exercising my right to remain silent."\n• "I do not consent to any searches."\n• "Am I free to leave?"\n• "I would like to speak to an attorney."\n• "I am recording this interaction for my safety."`,
-        scriptNotToSay: `• Don't say "I have nothing to hide"\n• Don't volunteer information\n• Don't argue about your rights\n• Don't resist, even if the stop is illegal\n• Don't discuss ongoing legal matters`
-      }
+      // Generate scripts using OpenAI
+      const scripts = await generateLegalScripts(selectedState, language)
+      
+      toast.dismiss(loadingToast)
       
       setLegalContent(prev => ({
         ...prev,
-        ...mockScripts
+        scriptToSay: scripts.scriptToSay,
+        scriptNotToSay: scripts.scriptNotToSay
       }))
       
-      incrementScriptUsage()
-      toast.dismiss()
+      // Increment usage count
+      await incrementScriptUsage()
       toast.success('Scripts generated successfully!')
       
     } catch (error) {
       toast.dismiss()
       toast.error('Failed to generate scripts')
+      console.error('Script generation error:', error)
     }
   }
 
@@ -104,31 +105,57 @@ export default function RightsCard({ selectedState, onChangeState, onShowSubscri
     }
   }
 
-  const saveRecording = (type) => {
+  const saveRecording = async (type) => {
     if (recordedChunks.length === 0) return
     
     const blob = new Blob(recordedChunks, {
       type: type === 'video' ? 'video/webm' : 'audio/webm'
     })
     
-    // In real app, this would upload to Supabase storage
-    const incidentReport = {
-      id: Date.now(),
-      userId: user?.id,
-      timestamp: new Date().toISOString(),
-      location: selectedState,
-      type: type,
-      size: blob.size,
-      url: URL.createObjectURL(blob) // Temporary URL for demo
+    try {
+      const loadingToast = toast.loading('Saving recording...')
+      
+      // Import services
+      const { fileService, incidentService } = await import('../lib/database.js')
+      
+      // Create file with timestamp
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+      const fileName = `${type}-${timestamp}.webm`
+      const file = new File([blob], fileName, { type: blob.type })
+      
+      // Upload file to storage
+      const uploadResult = await fileService.uploadFile(file, 'incident-recordings', user?.id)
+      
+      // Create incident report
+      const incidentData = {
+        userId: user?.id,
+        timestamp: new Date().toISOString(),
+        location: selectedState,
+        state: selectedState,
+        notes: `${type} recording from ${selectedState}`,
+        audioUrl: type === 'audio' ? uploadResult.url : null,
+        videoUrl: type === 'video' ? uploadResult.url : null,
+        shareCardContent: {
+          type: 'recording',
+          recordingType: type,
+          state: selectedState,
+          timestamp: new Date().toISOString()
+        }
+      }
+      
+      await incidentService.createIncident(incidentData)
+      
+      toast.dismiss(loadingToast)
+      toast.success('Recording saved successfully!')
+      
+      // Clear recorded chunks
+      setRecordedChunks([])
+      
+    } catch (error) {
+      toast.dismiss()
+      toast.error('Failed to save recording')
+      console.error('Recording save error:', error)
     }
-    
-    // Save to localStorage for demo
-    const savedReports = JSON.parse(localStorage.getItem('incident-reports') || '[]')
-    savedReports.push(incidentReport)
-    localStorage.setItem('incident-reports', JSON.stringify(savedReports))
-    
-    setRecordedChunks([])
-    toast.success('Recording saved to incident history')
   }
 
   const shareRightsCard = async () => {
